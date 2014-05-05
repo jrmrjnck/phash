@@ -1,38 +1,90 @@
+/*
+ * Jonathan Doman
+ * jonathan.doman@gmail.com
+ */
+
+#include "kernel.h"
+#include "Util.h"
+#include "HashMap.h"
+
 #include <iostream>
+#include <cassert>
 
 using namespace std;
 
-__global__ void kernel( int* a )
+namespace
 {
-   int tid = threadIdx.x;
-   a[tid] *= 2;
+// 
+Key*   _keys;
+Value* _values;
+int _inputSize;
+dim3 _grid;
+dim3 _block;
+
+__device__ HashMap<Key,Value> _table;
+
+// Initialize table
+__global__ void initTable( int inputSize )
+{
+   _table.init();
+   _table.resize( inputSize );
 }
 
-bool errorOccurred( cudaError_t err, std::string operation )
+// Kernel to insert items
+__global__ void insertItem( Key* keys, Value* values )
 {
-   if( err != cudaSuccess )
+   int tid = blockIdx.x * blockDim.x + threadIdx.x;
+   _table.insert( keys[tid], values[tid] );
+}
+
+// Kernel to query an item
+__global__ void queryItem( Key* keys )
+{
+   int tid = blockIdx.x * blockDim.x + threadIdx.x;
+   Value v = _table.query( keys[tid] );
+}
+}
+
+// Copy host data into device side arrays
+void copyData( int N, Key* keys, Value* values )
+{
+   _inputSize = N;
+   size_t keySize = N * sizeof(Key);
+   size_t valSize = N * sizeof(Value);
+   cudaMalloc( &_keys, keySize );
+   cudaMalloc( &_values, valSize );
+   cudaMemcpy( _keys, keys, keySize, cudaMemcpyHostToDevice );
+   cudaMemcpy( _values, values, valSize, cudaMemcpyHostToDevice );
+
+   initTable <<<1,1>>> ( _inputSize );
+
+   cudaDeviceSynchronize();
+}
+
+// Allocate one thread to insert each input item
+void constructTable()
+{
+   // Calculate reasonable grid/block dimensions
+   const int maxBlockSize = 64;
+   _grid  = dim3( 1, 1, 1 );
+   _block = dim3( 1, 1, 1 );
+   if( _inputSize < maxBlockSize )
    {
-      cout << "Error during " << operation << ": " << err << endl;
-      return true;
+      _block.x = _inputSize;
    }
-   return false;
+   else
+   {
+      _block.x = maxBlockSize;
+      _grid.x  = _inputSize / maxBlockSize;
+      assert( _inputSize % maxBlockSize == 0 );
+   }
+
+   insertItem <<<_grid,_block>>> ( _keys, _values );
+
+   cudaDeviceSynchronize();
 }
 
-#define CHECK_ERROR(err,op) do{if(errorOccurred(err,op)) return;}while(false)
-
-void kernelWrapper( int* a, int N )
+void queryTable()
 {
-   int* deviceKeys;
-   size_t size = N * sizeof(int);
-   cudaError_t err = cudaMalloc( &deviceKeys, size );
-   CHECK_ERROR(err,"malloc");
-   err = cudaMemcpy( deviceKeys, a, size, cudaMemcpyHostToDevice );
-   CHECK_ERROR(err,"memcpy to");
-
-   kernel<<<1,N>>>( deviceKeys );
-
-   err = cudaMemcpy( a, deviceKeys, size, cudaMemcpyDeviceToHost );
-   CHECK_ERROR(err,"memcpy from");
-   err = cudaFree( deviceKeys );
-   CHECK_ERROR(err,"free");
+   queryItem <<<_grid,_block>>> ( _keys );
 }

@@ -1,6 +1,15 @@
+/*
+ * Jonathan Doman
+ * jonathan.doman@gmail.com
+ */
+
 #ifndef KERNEL_H
 #define KERNEL_H
 
-void kernelWrapper( int* a, int N );
+typedef unsigned int Key;
+typedef unsigned int Value;
+
+void copyData( int N, Key* keys, Value* values );
+void constructTable();
 
 #endif // !KERNEL_H

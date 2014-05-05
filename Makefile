@@ -44,10 +44,10 @@ endif
 # Combine compiler and linker flags
 release: export CXXFLAGS := $(CXXFLAGS) $(COMPILE_FLAGS) $(RCOMPILE_FLAGS)
 release: export LDFLAGS := $(LDFLAGS) $(LINK_FLAGS) $(RLINK_FLAGS)
-release: export NVCCFLAGS := $(CUDA_FLAGS) --compiler-options='-Wall -Wextra -g $(RCOMPILE_FLAGS)'
+release: export NVCCFLAGS := $(CUDA_FLAGS) --compiler-options='-Wall -g $(RCOMPILE_FLAGS)'
 debug: export CXXFLAGS := $(CXXFLAGS) $(COMPILE_FLAGS) $(DCOMPILE_FLAGS)
 debug: export LDFLAGS := $(LDFLAGS) $(LINK_FLAGS) $(DLINK_FLAGS)
-debug: export NVCCFLAGS := $(CUDA_FLAGS) --compiler-options='-Wall -Wextra -g $(DCOMPILE_FLAGS)'
+debug: export NVCCFLAGS := $(CUDA_FLAGS) --compiler-options='-Wall -g $(DCOMPILE_FLAGS)'
 
 # Build and output paths
 release: export BUILD_TYPE := release

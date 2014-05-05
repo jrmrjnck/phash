@@ -15,27 +15,27 @@ using namespace std;
 
 int main()
 {
+   // Uniform distribution with mersenne twister PRNG
    random_device rd;
-   default_random_engine gen( rd() );
-   uniform_int_distribution<int> dis( numeric_limits<int>::min(), numeric_limits<int>::max() );
+   mt19937 gen( rd() );
+   uniform_int_distribution<Key> keyGen( numeric_limits<Key>::min(), 
+                                         numeric_limits<Key>::max() );
+   uniform_int_distribution<Value> valGen( numeric_limits<Value>::min(), 
+                                           numeric_limits<Value>::max() );
 
-   const int N = 1 << 4;
+   const int N = 1 << 10;
 
-   vector<int> keys( N );
-   for( int& k : keys )
+   vector<Key> keys(N);
+   vector<Value> values(N);
+   for( int i = 0; i < N; ++i )
    {
-      k = dis( gen );
-      cout << k << " ";
+      keys[i] = keyGen( gen );
+      values[i] = valGen( gen );
    }
-   cout << endl << endl;
 
-   kernelWrapper( keys.data(), N );
+   copyData( N, keys.data(), values.data() );
 
-   for( int k : keys )
-   {
-      cout << k << " ";
-   }
-   cout << endl;
+   constructTable();
 
    return 0;
 }
