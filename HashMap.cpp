@@ -81,10 +81,10 @@ uint32_t HashMap::_set( Table& table,
    assert( !isPrime(value) );
    assert( !isPrime(expectedVal) );
 
-   auto index = _hash( key ) % table.capacity;
+   int64_t index = static_cast<int64_t>(_hash(key)) % table.capacity;
 
    uint32_t k, v;
-   int probeCount = 0;
+   int64_t probeCount = 0;
    Table* newTable = nullptr;
 
    // Spin until we can claim a key
@@ -190,9 +190,9 @@ uint32_t HashMap::_set( Table& table,
 
 uint32_t HashMap::_get( Table& table, uint32_t key, uint32_t hash )
 {
-   int index = hash % table.capacity;
+   int64_t index = static_cast<int64_t>(hash) % table.capacity;
 
-   int probeCount = 0;
+   int64_t probeCount = 0;
    while( true )
    {
       const uint32_t k = table[index].key.load( memory_order_relaxed );
