@@ -88,6 +88,7 @@ void runCuda( int N,
    lap( timer, "Table tear down" );
 }
 
+// Split up the items into equal sizes for each thread and insert
 void constructTable( HashMap& table,
                      std::vector<HashMap::Slot>::const_iterator begin,
                      std::vector<HashMap::Slot>::const_iterator end )
@@ -101,20 +102,31 @@ void constructTable( HashMap& table,
    }
 }
 
+// We don't want to split the items evenly here, since one thread may
+// get stuck with slow items and end up working long past the other threads
+// finish, pulling down the overall query rate. So we have them all pull
+// from the same vector in small increments.
 void queryTable( HashMap& table,
-                 std::vector<HashMap::Slot>::const_iterator begin,
-                 std::vector<HashMap::Slot>::const_iterator end,
-                 int times = 1 )
+                 const std::vector<HashMap::Slot>& items,
+                 std::atomic<uint64_t>& cur,
+                 uint64_t target )
 {
-   while( times-- )
+   const int workSize = min( items.size(), 1024UL );
+
+   while( cur < target )
    {
-      auto it = begin;
-      while( it < end )
+      // Try to grab items from the common vector
+      uint64_t index = cur;
+      while( !cur.compare_exchange_weak(index,index+workSize) );
+      if( index >= target )
+         return;
+
+      index %= items.size();
+
+      for( int i = 0; i < workSize; ++i )
       {
-         uint32_t v;
-         bool result = table.get( it->key, &v );
+         bool result = table.get( items[index+i].key );
          assert( result );
-         ++it;
       }
    }
 }
@@ -170,11 +182,11 @@ void runSharedMem( int N,
       t.join();
    constTime += lap( timer );
 
-   it = items.begin();
+   std::atomic<uint64_t> cur;
+   uint64_t target = items.size() * nQuery;
    for( auto& t : threads )
    {
-      t = thread( queryTable, ref(table), it, it+nPerThread, nQuery );
-      it += nPerThread;
+      t = thread( queryTable, ref(table), ref(items), ref(cur), target );
    }
 
    for( auto& t : threads )
