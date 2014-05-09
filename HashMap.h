@@ -21,8 +21,14 @@ public:
       std::atomic<uint32_t> value;
    };
 
+   enum HashType
+   {
+      LinearProbe,
+      QuadraticProbe
+   };
+
 public:
-   HashMap();
+   HashMap( HashType type = QuadraticProbe );
    ~HashMap();
 
    void set( uint32_t key, uint32_t value );
@@ -51,6 +57,7 @@ private:
    void     _copySlotAndCheck( Table& table, int index, bool doExtraHelp = false );
    void     _copyCheckAndPromote( Table& table, int workDone );
    bool     _copySlot( int index, Table& oldTable, Table& newTable );
+   int      _probeLimit( int capacity ) const;
 
 private:
    class Table
@@ -103,6 +110,8 @@ private:
 
    std::mt19937 _gen;
    std::uniform_int_distribution<uint32_t> _rand;
+
+   HashType _type;
 };
 
 #endif // !HASHMAP_H

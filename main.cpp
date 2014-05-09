@@ -143,7 +143,14 @@ void runSharedMem( int N,
       s.value = valDist( gen );
    }
 
-   HashMap table;
+   // Convert hash type
+   HashMap::HashType hashType;
+   if( type == LinearProbe )
+      hashType = HashMap::LinearProbe;
+   else
+      hashType = HashMap::QuadraticProbe;
+
+   HashMap table( hashType );
    Timer timer;
    timer.start();
 

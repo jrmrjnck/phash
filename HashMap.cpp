@@ -30,8 +30,9 @@ bool isPrime( uint32_t v )
 }
 }
 
-HashMap::HashMap()
- : _table(new Table(DEFAULT_TABLE_CAPACITY))
+HashMap::HashMap( HashType type )
+ : _table(new Table(DEFAULT_TABLE_CAPACITY)),
+   _type(type)
 {
    // Initialize hash function parameters
    random_device rd;
@@ -119,7 +120,8 @@ uint32_t HashMap::_set( Table& table,
          break;
 
       // End of the road, go to new table
-      if( ++probeCount > MAX_PROBES || key == DEAD_KEY ) // FIXME: k or key here?
+      if( ++probeCount > _probeLimit(table.capacity) 
+          || key == DEAD_KEY ) // FIXME: k or key here?
       {
          newTable = _resize( table );
          if( mode != MatchVal ||  expectedVal != NULL_VALUE )
@@ -127,10 +129,10 @@ uint32_t HashMap::_set( Table& table,
          return _set( *newTable, key, value, mode, expectedVal );
       }
 
-      // Quadratic probe
-      //index = (index + probeCount*probeCount) % table.capacity;
-      // Linear probe
-      index = (index + 1) % table.capacity;
+      if( _type == QuadraticProbe )
+         index = (index + probeCount*probeCount) % table.capacity;
+      else
+         index = (index + 1) % table.capacity;
    }
 
    if( v == value )
@@ -138,7 +140,7 @@ uint32_t HashMap::_set( Table& table,
 
    // Test to see if we want to move to a new table
    if( newTable == nullptr
-       && ((v == NULL_VALUE && probeCount > MAX_PROBES)
+       && ((v == NULL_VALUE && probeCount > _probeLimit(table.capacity))
            || isPrime(v)) )
    {
       newTable = _resize( table );
@@ -206,11 +208,12 @@ uint32_t HashMap::_get( Table& table, uint32_t key, uint32_t hash )
          if( !isPrime(v) )
             return (v == DEAD_KEY) ? NULL_KEY : v;
 
+         assert( newTable != nullptr );
          _copySlotAndCheck( table, index, true );
          return _get( *newTable, key, hash );
       }
 
-      if( ++probeCount > MAX_PROBES || key == DEAD_KEY )
+      if( ++probeCount > _probeLimit(table.capacity) || key == DEAD_KEY )
       {
          if( newTable == nullptr )
             return NULL_KEY;
@@ -219,10 +222,10 @@ uint32_t HashMap::_get( Table& table, uint32_t key, uint32_t hash )
          return _get( *newTable, key, hash );
       }
 
-      // Quadratic probe
-      //index = (index + probeCount*probeCount) % table.capacity;
-      // Linear probe
-      index = (index + 1) % table.capacity;
+      if( _type == QuadraticProbe )
+         index = (index + probeCount*probeCount) % table.capacity;
+      else
+         index = (index + 1) % table.capacity;
    }
    return false;
 }
@@ -399,4 +402,10 @@ bool HashMap::_copySlot( int index, Table& oldTable, Table& newTable )
    while( !oldTable[index].value.compare_exchange_weak(v,DEADPRIME_VALUE) );
 
    return copiedToNew;
+}
+
+int HashMap::_probeLimit( int capacity ) const
+{
+   // Cliff Click's resize trigger heuristic
+   return MAX_PROBES + capacity / 4;
 }
