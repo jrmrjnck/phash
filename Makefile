@@ -11,7 +11,7 @@ CUDA_EXT = cu
 SRC_PATH = .
 # General compiler flags
 COMPILE_FLAGS = -std=c++11 -Wall -Wextra -g
-CUDA_FLAGS = -arch=compute_20 -code=sm_21 --compiler-bindir=$(shell which $(CXX))
+CUDA_FLAGS = -arch=compute_20 -code=sm_21 --compiler-bindir=$(shell which $(CXX)) -G
 # Additional release-specific flags
 RCOMPILE_FLAGS = -D NDEBUG -O2
 # Additional debug-specific flags

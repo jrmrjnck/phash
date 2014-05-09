@@ -16,7 +16,6 @@ namespace
 const float LOAD_FACTOR = 0.8;
 const Key NULL_KEY = 0;
 const Slot NULL_SLOT = 0;
-const int MAX_PROBES = 100;
 
 // Device side key-value data
 Key*      _keys;
@@ -35,6 +34,7 @@ struct TableState
    int capacity;
    uint32_t* params;
    int paramIdx;
+   int maxProbes;
 };
 
 TableState* _tableState;
@@ -50,21 +50,28 @@ Key slotKey( Slot s )
 {
    return s >> CHAR_BIT*sizeof(Value);
 }
-__device__
-Value slotValue( Slot s )
-{
-   return s & ((1ULL << CHAR_BIT*sizeof(Value))-1);
-}
+/*__device__*/
+/*Value slotValue( Slot s )*/
+/*{*/
+   /*return s & ((1ULL << CHAR_BIT*sizeof(Value))-1);*/
+/*}*/
 
 // Initialize table
 __global__
-void initTable( TableState* tableState, int capacity, Slot* tableSlots, uint32_t* params, int numParams )
+void initTable( bool cuckoo, TableState* ts, int capacity, Slot* tableSlots, uint32_t* params, int numParams, int inputSize )
 {
-   printf( "Initializing table\n" );
-   tableState->table    = tableSlots;
-   tableState->capacity = capacity;
-   tableState->params   = params;
-   tableState->paramIdx = numParams - 1;
+   ts->table    = tableSlots;
+   ts->capacity = capacity;
+   ts->params   = params;
+   ts->paramIdx = numParams - 1;
+   
+   // Max probe heuristics from Alcantara
+   if( cuckoo )
+      ts->maxProbes = 7 * log2f( inputSize );
+   else
+      ts->maxProbes = min( inputSize, 10000 );
+
+   printf( "maxProbes = %d\n", ts->maxProbes );
 }
 
 __device__
@@ -85,7 +92,7 @@ void quadInsert( TableState* ts, Key* keys, Value* values )
    Slot newEntry = makeSlot( keys[tid], values[tid] );
    uint32_t index = hash( ts, keys[tid] ) % ts->capacity;
 
-   for( int i = 1; i <= MAX_PROBES; ++i )
+   for( int i = 1; i <= ts->maxProbes; ++i )
    {
       // nvcc requires these ridiculous casts even though the types are the same
       Slot oldEntry = atomicCAS( reinterpret_cast<unsigned long long*>(ts->table+index),
@@ -102,6 +109,7 @@ void quadInsert( TableState* ts, Key* keys, Value* values )
 
    // Couldn't find a spot - rehash
    printf( "Insert (%u,%u) failed\n", keys[tid], values[tid] );
+   // TODO: rehash - I've never actually seen a failed insertion
 }
 
 // Kernel to query an item using quadratic probing
@@ -112,7 +120,7 @@ void quadQuery( TableState* ts, Key* keys, Value* values )
    Key key = keys[tid];
    uint32_t index = hash( ts, key ) % ts->capacity;
 
-   for( int i = 1; i <= MAX_PROBES; ++i )
+   for( int i = 1; i <= ts->maxProbes; ++i )
    {
       Slot entry = ts->table[index];
       Key k = slotKey( entry );
@@ -125,6 +133,7 @@ void quadQuery( TableState* ts, Key* keys, Value* values )
       index = (index + i*i) % ts->capacity;
    }
 
+   // Should never fail except for invalid keys
    printf( "Query for %u failed\n", key );
 }
 
@@ -136,12 +145,13 @@ void cuckooInsert( TableState* ts, Key* keys, Value* values )
    Value value = values[tid];
    Slot entry = makeSlot( key, value );
 
-   uint32_t idx = hash( ts, key, 0 ) % ts->capacity;
+   uint32_t idx[5];
+   idx[0] = hash( ts, key, 0 ) % ts->capacity;
 
-   for( int i = 0; i <= MAX_PROBES; ++i )
+   for( int i = 0; i <= ts->maxProbes; ++i )
    {
       // Exchange items
-      entry = atomicExch( reinterpret_cast<unsigned long long*>(&ts->table[idx]), entry );
+      entry = atomicExch( reinterpret_cast<unsigned long long*>(&ts->table[idx[0]]), entry );
 
       key = slotKey( entry );
 
@@ -150,17 +160,19 @@ void cuckooInsert( TableState* ts, Key* keys, Value* values )
          return;
 
       // Otherwise find a new location for the displaced item
-      uint32_t idx1 = hash( ts, key, 0 );
-      uint32_t idx2 = hash( ts, key, 1 );
-      uint32_t idx3 = hash( ts, key, 2 );
-      uint32_t idx4 = hash( ts, key, 3 );
-           if( idx == idx1 ) idx = idx2;
-      else if( idx == idx2 ) idx = idx3;
-      else if( idx == idx3 ) idx = idx4;
-      else                   idx = idx1;
+      idx[1] = hash( ts, key, 0 ) % ts->capacity;
+      idx[2] = hash( ts, key, 1 ) % ts->capacity;
+      idx[3] = hash( ts, key, 2 ) % ts->capacity;
+      idx[4] = hash( ts, key, 3 ) % ts->capacity;
+
+           if( idx[0] == idx[1] ) idx[0] = idx[2];
+      else if( idx[0] == idx[2] ) idx[0] = idx[3];
+      else if( idx[0] == idx[3] ) idx[0] = idx[4];
+      else                        idx[0] = idx[1];
    }
 
-   printf( "Insert (%u,%u) failed\n", key, value );
+   printf( "tid %d: Insert (%u,%u) failed\n", tid, key, value );
+   // TODO: rehash, but I've never actually seen a failed insertion
 }
 
 __global__
@@ -187,6 +199,7 @@ void cuckooQuery( TableState* ts, Key* keys, Value* values )
          break;
    }
 
+   // Should never fail except for invalid keys
    printf( "Query for %u failed\n", key );
 }
 }
@@ -204,8 +217,10 @@ void cuckooQuery( TableState* ts, Key* keys, Value* values )
 #define CUDA_CALL(x) ERROR_CHECK(x,cudaError_t,cudaSuccess,cudaGetErrorString(err))
 
 // Copy host data into device side arrays
-void copyData( int N, Key* keys, Value* values, uint32_t* params, int numParams )
+void copyData( bool cuckoo, int N, Key* keys, Value* values, uint32_t* params, int numParams )
 {
+   assert( numParams >= 8 );
+
    _inputSize = N;
    int capacity = N / LOAD_FACTOR;
    size_t keySize = N * sizeof(Key);
@@ -223,7 +238,7 @@ void copyData( int N, Key* keys, Value* values, uint32_t* params, int numParams 
    CUDA_CALL(cudaMemcpy( _params, params, paramSize, cudaMemcpyHostToDevice ));
    CUDA_CALL(cudaMemset( _table, 0, tableSize ));
 
-   initTable <<<1,1>>> ( _tableState, capacity, _table, _params, numParams );
+   initTable <<<1,1>>> ( cuckoo, _tableState, capacity, _table, _params, numParams, _inputSize );
 
    // Synchronize to get accurate timing
    CUDA_CALL(cudaDeviceSynchronize());
