@@ -1,82 +1,33 @@
 #ifndef HASHMAP_H
 #define HASHMAP_H
 
-#define MAX_PROBES 10000
+#define MAX_PROBES 100
 
-template<typename KeyT, typename ValueT>
+#include "kernel.h"
+
+#include <cstdio>
+
 class HashMap
 {
 public:
-   struct Slot
-   {
-      KeyT   key;
-      ValueT value;
-   };
-
-public:
-   __device__ void init()
-   {
-      _size = 0;
-      _table = NULL;
-      _loadFactor = 0.9;
-   }
-
-   __device__ void deinit()
-   {
-      delete _table;
-   }
-
-   __device__ bool insert( KeyT key, ValueT value )
-   {
-      unsigned index = _hash( key );
-
-      for( int i = 1; i <= MAX_PROBES; ++i )
-      {
-         KeyT oldKey = atomicCAS( reinterpret_cast<KeyT*>(_table+index), 0, key );
-
-         if( oldKey == 0 || oldKey == key )
-         {
-            _table[index].value = value;
-            return true;
-         }
-
-         // Quadratic jump
-         index = (index + i*i) % _size;
-      }
-
-      return false;
-   }
-
-   __device__ ValueT query( KeyT key )
-   {
-      unsigned index = _hash( key );
-
-      for( int i = 1; i <= MAX_PROBES; ++i )
-      {
-      }
-
-      return 0;
-   }
-
-   __device__ void resize( int size )
-   {
-      _size = size / _loadFactor;
-      delete _table;
-      _table = new Slot[_size];
-      memset( _table, 0, _size*sizeof(Slot) );
-   }
+   __device__ void init( int inputSize, Slot* table, uint32_t* params, int numParams );
+   __device__ void deinit();
+   __device__ bool insert( Key key, Value value, Value* oldVal = NULL );
+   __device__ bool query( Key key, Value& value );
 
 private:
-   __device__ unsigned int _hash( KeyT key )
-   {
-      return 0;
-   }
+   __device__ uint32_t _hash( Key key );
 
 private:
    int   _size;
+   int   _capacity;
    Slot* _table;
 
-   float _loadFactor;
+   uint32_t _a;
+   uint32_t _b;
+   uint32_t _p;
+   uint32_t* _params;
+   int _numParams;
 };
 
 #endif // !HASHMAP_H
