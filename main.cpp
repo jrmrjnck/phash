@@ -199,7 +199,7 @@ int main( int argc, char* argv[] )
 {
    if( argc == 1 )
    {
-      cout << "Usage: <2^N> <CUDA|ShMem> <Linear|Quad|Cuckoo> <iter> <queryIter> <smMemThreads>" << endl;
+      cout << "Usage: <2^N> <CUDA|ShMem> <Linear|Quad|Cuckoo> <iter> <queryIter> <shMemThreads>" << endl;
       return 0;
    }
 
