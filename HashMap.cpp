@@ -407,5 +407,5 @@ bool HashMap::_copySlot( int index, Table& oldTable, Table& newTable )
 int HashMap::_probeLimit( int capacity ) const
 {
    // Cliff Click's resize trigger heuristic
-   return MAX_PROBES + capacity / 4;
+   return MAX_PROBES; // + capacity / 512;
 }
